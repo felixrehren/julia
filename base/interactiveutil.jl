@@ -723,6 +723,10 @@ summarysize(obj; exclude = Union{Module,DataType,TypeName}) =
 
 summarysize(obj::Symbol, seen, excl) = 0
 
+function summarysize(obj::UnionAll, seen, excl)
+    return 2*sizeof(Int) + summarysize(obj.body) + summarysize(obj.var)
+end
+
 function summarysize(obj::DataType, seen, excl)
     key = pointer_from_objref(obj)
     haskey(seen, key) ? (return 0) : (seen[key] = true)

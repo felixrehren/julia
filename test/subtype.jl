@@ -2,7 +2,7 @@ using Base.Bottom
 using Base.Test
 
 macro UnionAll(var, expr)
-    Expr(:where, expr, var)
+    Expr(:where, esc(expr), esc(var))
 end
 
 const issub = issubtype

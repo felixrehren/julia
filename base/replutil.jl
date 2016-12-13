@@ -450,7 +450,7 @@ function show_method_candidates(io::IO, ex::MethodError, kwargs::Vector=Any[])
                 # If isvarargtype then it checks whether the rest of the input arguments matches
                 # the varargtype
                 if Base.isvarargtype(sig[i])
-                    sigstr = string(sig[i].parameters[1], "...")
+                    sigstr = string(unwrap_unionall(sig[i]).parameters[1], "...")
                     j = length(t_i)
                 else
                     sigstr = string(sig[i])
@@ -484,7 +484,7 @@ function show_method_candidates(io::IO, ex::MethodError, kwargs::Vector=Any[])
                 # It ensures that methods like f(a::AbstractString...) gets the correct
                 # number of right_matches
                 for t in arg_types_param[length(sig):end]
-                    if t <: sig[end].parameters[1]
+                    if t <: unwrap_unionall(sig[end]).parameters[1]
                         right_matches += 1
                     end
                 end
