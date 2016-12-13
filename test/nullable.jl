@@ -285,7 +285,7 @@ for T in types
 end
 
 # Operators
-TestTypes = Any[Base.NullSafeTypes, BigInt, BigFloat,
+TestTypes = Any[Base.uniontypes(Base.NullSafeTypes)..., BigInt, BigFloat,
                 Complex{Int}, Complex{Float64}, Complex{BigFloat},
                 Rational{Int}, Rational{BigInt}]
 for S in TestTypes, T in TestTypes

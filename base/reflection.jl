@@ -117,6 +117,7 @@ julia> fieldname(SparseMatrixCSC,5)
 ```
 """
 fieldname(t::DataType, i::Integer) = t.name.names[i]::Symbol
+fieldname(t::UnionAll, i::Integer) = fieldname(unwrap_unionall(t), i)
 fieldname{T<:Tuple}(t::Type{T}, i::Integer) = i < 1 || i > nfields(t) ? throw(BoundsError(t, i)) : Int(i)
 
 """
@@ -139,6 +140,7 @@ function fieldnames(v)
     return fieldnames(t)
 end
 fieldnames(t::DataType) = Symbol[fieldname(t, n) for n in 1:nfields(t)]
+fieldnames(t::UnionAll) = fieldnames(unwrap_unionall(t))
 fieldnames{T<:Tuple}(t::Type{T}) = Int[n for n in 1:nfields(t)]
 
 """

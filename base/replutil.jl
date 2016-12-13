@@ -457,7 +457,8 @@ function show_method_candidates(io::IO, ex::MethodError, kwargs::Vector=Any[])
                     j = i
                 end
                 # Checks if the type of arg 1:i of the input intersects with the current method
-                t_in = typeintersect(Tuple{sig[1:i]...}, Tuple{t_i[1:j]...})
+                t_in = typeintersect(rewrap_unionall(Tuple{sig[1:i]...}, method.sig),
+                                     rewrap_unionall(Tuple{t_i[1:j]...}, method.sig))
                 # If the function is one of the special cased then it should break the loop if
                 # the type of the first argument is not matched.
                 t_in === Union{} && special && i == 1 && break
@@ -484,7 +485,7 @@ function show_method_candidates(io::IO, ex::MethodError, kwargs::Vector=Any[])
                 # It ensures that methods like f(a::AbstractString...) gets the correct
                 # number of right_matches
                 for t in arg_types_param[length(sig):end]
-                    if t <: unwrap_unionall(sig[end]).parameters[1]
+                    if t <: rewrap_unionall(unwrap_unionall(sig[end]).parameters[1], method.sig)
                         right_matches += 1
                     end
                 end
