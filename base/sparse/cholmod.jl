@@ -993,21 +993,51 @@ function convert{Tv}(::Type{SparseMatrixCSC{Tv,SuiteSparse_long}}, A::Sparse{Tv}
     if s.stype != 0
         throw(ArgumentError("matrix has stype != 0. Convert to matrix with stype == 0 before converting to SparseMatrixCSC"))
     end
-    return SparseMatrixCSC(s.nrow, s.ncol, increment(unsafe_wrap(Array, s.p, (s.ncol + 1,), false)), increment(unsafe_wrap(Array, s.i, (s.nzmax,), false)), copy(unsafe_wrap(Array, s.x, (s.nzmax,), false)))
+
+    B = SparseMatrixCSC(s.nrow, s.ncol,
+        increment(unsafe_wrap(Array, s.p, (s.ncol + 1,), false)),
+        increment(unsafe_wrap(Array, s.i, (s.nzmax,), false)),
+        copy(unsafe_wrap(Array, s.x, (s.nzmax,), false)))
+
+    if s.sorted == 0
+        return SparseArrays.sortSparseMatrixCSC!(B)
+    else
+        return B
+    end
 end
 function convert(::Type{Symmetric{Float64,SparseMatrixCSC{Float64,SuiteSparse_long}}}, A::Sparse{Float64})
     s = unsafe_load(A.p)
     if !issymmetric(A)
         throw(ArgumentError("matrix is not symmetric"))
     end
-    return Symmetric(SparseMatrixCSC(s.nrow, s.ncol, increment(unsafe_wrap(Array, s.p, (s.ncol + 1,), false)), increment(unsafe_wrap(Array, s.i, (s.nzmax,), false)), copy(unsafe_wrap(Array, s.x, (s.nzmax,), false))), s.stype > 0 ? :U : :L)
+
+    B = Symmetric(SparseMatrixCSC(s.nrow, s.ncol,
+        increment(unsafe_wrap(Array, s.p, (s.ncol + 1,), false)),
+        increment(unsafe_wrap(Array, s.i, (s.nzmax,), false)),
+        copy(unsafe_wrap(Array, s.x, (s.nzmax,), false))), s.stype > 0 ? :U : :L)
+
+    if s.sorted == 0
+        return SparseArrays.sortSparseMatrixCSC!(B)
+    else
+        return B
+    end
 end
 function convert{Tv<:VTypes}(::Type{Hermitian{Tv,SparseMatrixCSC{Tv,SuiteSparse_long}}}, A::Sparse{Tv})
     s = unsafe_load(A.p)
     if !ishermitian(A)
         throw(ArgumentError("matrix is not Hermitian"))
     end
-    return Hermitian(SparseMatrixCSC(s.nrow, s.ncol, increment(unsafe_wrap(Array, s.p, (s.ncol + 1,), false)), increment(unsafe_wrap(Array, s.i, (s.nzmax,), false)), copy(unsafe_wrap(Array, s.x, (s.nzmax,), false))), s.stype > 0 ? :U : :L)
+
+    B = Hermitian(SparseMatrixCSC(s.nrow, s.ncol,
+        increment(unsafe_wrap(Array, s.p, (s.ncol + 1,), false)),
+        increment(unsafe_wrap(Array, s.i, (s.nzmax,), false)),
+        copy(unsafe_wrap(Array, s.x, (s.nzmax,), false))), s.stype > 0 ? :U : :L)
+
+    if s.sorted == 0
+        return SparseArrays.sortSparseMatrixCSC!(B)
+    else
+        return B
+    end
 end
 function sparse(A::Sparse{Float64}) # Notice! Cannot be type stable because of stype
     s = unsafe_load(A.p)
