@@ -645,7 +645,7 @@ jl_value_t *jl_apply_type(jl_value_t *tc, jl_value_t **params, size_t n)
         jl_value_t *pi = params[i];
 
         if (!valid_type_param(pi)) {
-            jl_type_error_rt("type", "parameter",
+            jl_type_error_rt("Type", "parameter",
                              jl_isa(pi, (jl_value_t*)jl_number_type) ?
                              (jl_value_t*)jl_long_type : (jl_value_t*)jl_type_type,
                              pi);
@@ -653,8 +653,23 @@ jl_value_t *jl_apply_type(jl_value_t *tc, jl_value_t **params, size_t n)
 
         jl_unionall_t *ua = (jl_unionall_t*)tc;
         if (!jl_has_free_typevars(ua->var->lb) && !jl_has_free_typevars(ua->var->ub) &&
-            !within_typevar(pi, ua->var->lb, ua->var->ub))
-            jl_type_error_rt("type", "parameter", (jl_value_t*)ua->var, pi);
+            !within_typevar(pi, ua->var->lb, ua->var->ub)) {
+            jl_datatype_t *inner = (jl_datatype_t*)jl_unwrap_unionall(tc);
+            int iswrapper = 0;
+            if (jl_is_datatype(inner)) {
+                jl_value_t *temp = inner->name->wrapper;
+                while (jl_is_unionall(temp)) {
+                    if (temp == tc) {
+                        iswrapper = 1;
+                        break;
+                    }
+                    temp = ((jl_unionall_t*)temp)->body;
+                }
+            }
+            // if this is a wrapper, let check_datatype_parameters give the error
+            if (!iswrapper)
+                jl_type_error_rt("Type", jl_symbol_name(ua->var->name), (jl_value_t*)ua->var, pi);
+        }
 
         tc = jl_instantiate_unionall(ua, pi);
     }
