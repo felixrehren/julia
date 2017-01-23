@@ -89,7 +89,7 @@ Base.@printf([io::IOStream], "%Fmt", args...)
 help> AbstractString
 DataType   : AbstractString
   supertype: Any
-  subtypes : Any[DirectIndexString,RepString,RevString{T<:AbstractString},SubString{T<:AbstractString},String]
+  subtypes : Any[DirectIndexString,RevString{T<:AbstractString},SubString{T<:AbstractString},String]
 ```
 
 Help mode can be exited by pressing backspace at the beginning of the line.
@@ -129,38 +129,40 @@ control-key, there are also meta-key bindings.  These vary more by platform, but
  default to using alt- or option- held down with a key to send the meta-key (or can be configured
 to do so).
 
-| Keybinding          | Description                                                                  |
-|:------------------- |:---------------------------------------------------------------------------- |
-| **Program control** |                                                                              |
-| `^D`                | Exit (when buffer is empty)                                                  |
-| `^C`                | Interrupt or cancel                                                          |
-| `^L`                | Clear console screen                                                         |
-| Return/Enter, `^J`  | New line, executing if it is complete                                        |
-| meta-Return/Enter   | Insert new line without executing it                                         |
-| `?` or `;`          | Enter help or shell mode (when at start of a line)                           |
-| `^R`, `^S`          | Incremental history search, described above                                  |
-| **Cursor movement** |                                                                              |
-| Right arrow, `^F`   | Move right one character                                                     |
-| Left arrow, `^B`    | Move left one character                                                      |
-| Home, `^A`          | Move to beginning of line                                                    |
-| End, `^E`           | Move to end of line                                                          |
-| `^P`                | Change to the previous or next history entry                                 |
-| `^N`                | Change to the next history entry                                             |
-| Up arrow            | Move up one line (or to the previous history entry)                          |
-| Down arrow          | Move down one line (or to the next history entry)                            |
-| Page-up             | Change to the previous history entry that matches the text before the cursor |
-| Page-down           | Change to the next history entry that matches the text before the cursor     |
-| `meta-F`            | Move right one word                                                          |
-| `meta-B`            | Move left one word                                                           |
-| **Editing**         |                                                                              |
-| Backspace, `^H`     | Delete the previous character                                                |
-| Delete, `^D`        | Forward delete one character (when buffer has text)                          |
-| meta-Backspace      | Delete the previous word                                                     |
-| `meta-D`            | Forward delete the next word                                                 |
-| `^W`                | Delete previous text up to the nearest whitespace                            |
-| `^K`                | "Kill" to end of line, placing the text in a buffer                          |
-| `^Y`                | "Yank" insert the text from the kill buffer                                  |
-| `^T`                | Transpose the characters about the cursor                                    |
+| Keybinding          | Description                                                                      |
+|:------------------- |:-------------------------------------------------------------------------------- |
+| **Program control** |                                                                                  |
+| `^D`                | Exit (when buffer is empty)                                                      |
+| `^C`                | Interrupt or cancel                                                              |
+| `^L`                | Clear console screen                                                             |
+| Return/Enter, `^J`  | New line, executing if it is complete                                            |
+| meta-Return/Enter   | Insert new line without executing it                                             |
+| `?` or `;`          | Enter help or shell mode (when at start of a line)                               |
+| `^R`, `^S`          | Incremental history search, described above                                      |
+| **Cursor movement** |                                                                                  |
+| Right arrow, `^F`   | Move right one character                                                         |
+| Left arrow, `^B`    | Move left one character                                                          |
+| Home, `^A`          | Move to beginning of line                                                        |
+| End, `^E`           | Move to end of line                                                              |
+| `^P`                | Change to the previous or next history entry                                     |
+| `^N`                | Change to the next history entry                                                 |
+| Up arrow            | Move up one line (or to the previous history entry)                              |
+| Down arrow          | Move down one line (or to the next history entry)                                |
+| Page-up             | Change to the previous history entry that matches the text before the cursor     |
+| Page-down           | Change to the next history entry that matches the text before the cursor         |
+| `meta-F`            | Move right one word                                                              |
+| `meta-B`            | Move left one word                                                               |
+| **Editing**         |                                                                                  |
+| Backspace, `^H`     | Delete the previous character                                                    |
+| Delete, `^D`        | Forward delete one character (when buffer has text)                              |
+| meta-Backspace      | Delete the previous word                                                         |
+| `meta-D`            | Forward delete the next word                                                     |
+| `^W`                | Delete previous text up to the nearest whitespace                                |
+| `^K`                | "Kill" to end of line, placing the text in a buffer                              |
+| `^Y`                | "Yank" insert the text from the kill buffer                                      |
+| `^T`                | Transpose the characters about the cursor                                        |
+| `^Q`                | Write a number in REPL and press `^Q` to open editor at corresponding stackframe |
+
 
 ### Customizing keybindings
 
@@ -310,18 +312,21 @@ end
 atreplinit(customize_colors)
 ```
 
-The available color keys in `Base.text_colors` are `:black`, `:red`, `:green`, `:yellow`, `:blue`,
-`:magenta`, `:cyan`, `:white`, `:normal`, and `:bold` as well as the integers 0 to 255 for terminals
-with 256 color support. Similarly, you can change the colors for the help and shell prompts and
+The available color keys can be seen by typing `Base.text_colors` in the help mode of the REPL.
+In addition, the integers 0 to 255 can be used as color keys for terminals
+with 256 color support.
+
+You can also change the colors for the help and shell prompts and
 input and answer text by setting the appropriate field of `repl` in the `customize_colors` function
 above (respectively, `help_color`, `shell_color`, `input_color`, and `answer_color`). For the
 latter two, be sure that the `envcolors` field is also set to false.
 
-You can also customize the color used to render warning and informational messages by setting
-the appropriate environment variable. For instance, to render warning messages in yellow and informational
-messages in cyan you can add the following to your `juliarc.jl` file:
+You can also customize the color used to render warning and informational messages by
+setting the appropriate environment variables. For instance, to render error, warning, and informational
+messages respectively in magenta, yellow, and cyan you can add the following to your `juliarc.jl` file:
 
 ```julia
+ENV["JULIA_ERROR_COLOR"] = :magenta
 ENV["JULIA_WARN_COLOR"] = :yellow
 ENV["JULIA_INFO_COLOR"] = :cyan
 ```

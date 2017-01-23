@@ -48,8 +48,9 @@
                 ((vect)   (string #\[ (deparse-arglist (cdr e)) #\]))
                 ((vcat)   (string #\[ (deparse-arglist (cdr e) ";") #\]))
                 ((hcat)   (string #\[ (deparse-arglist (cdr e) " ") #\]))
-                ((global local const)
-                 (string (car e) " " (deparse (cadr e))))
+                ((const)  (string "const " (deparse (cadr e))))
+                ((global local)
+                 (string (car e) " " (string.join (map deparse (cdr e)) ", ")))
                 ((top)        (deparse (cadr e)))
                 ((core)       (string "Core." (deparse (cadr e))))
                 ((globalref)  (string (deparse (cadr e)) "." (deparse (caddr e))))
@@ -75,6 +76,8 @@
                  (string "[ " (deparse (cadr e)) " for " (deparse-arglist (cddr e) ", ") " ]"))
                 ((generator)
                  (string "(" (deparse (cadr e)) " for " (deparse-arglist (cddr e) ", ") ")"))
+                ((where)
+                 (string (deparse (cadr e)) " where " (deparse (caddr e))))
                 (else
                  (string e))))))
 
@@ -195,7 +198,36 @@
       (cadr (caddr e))
       e))
 
-(define (dotop? o) (and (symbol? o) (eqv? (string.char (string o) 0) #\.)))
+(define (dotop? o) (and (symbol? o) (eqv? (string.char (string o) 0) #\.)
+                        (not (eq? o '|.|))
+                        (not (eqv? (string.char (string o) 1) #\.))))
+
+; convert '.xx to 'xx
+(define (undotop op)
+  (let ((str (string op)))
+    (assert (eqv? (string.char str 0) #\.))
+    (symbol (string.sub str 1 (length str)))))
+
+; convert '.xx to 'xx, and (|.| _ '.xx) to (|.| _ 'xx), and otherwise return #f
+(define (maybe-undotop e)
+  (if (symbol? e)
+      (let ((str (string e)))
+        (if (and (eqv? (string.char str 0) #\.)
+                 (not (eq? e '|.|))
+                 (not (eqv? (string.char str 1) #\.)))
+            (symbol (string.sub str 1 (length str)))
+            #f))
+      (if (pair? e)
+          (if (eq? (car e) '|.|)
+              (let ((op (maybe-undotop (caddr e))))
+                (if op
+                    (list '|.| (cadr e) op)
+                    #f))
+              (if (quoted? e)
+                  (let ((op (maybe-undotop (cadr e))))
+                    (if op (list (car e) op) #f))
+                  #f))
+          #f)))
 
 (define (vararg? x) (and (pair? x) (eq? (car x) '...)))
 (define (varargexpr? x) (and

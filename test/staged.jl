@@ -154,9 +154,14 @@ end
 
 # @generated functions including inner functions
 @generated function _g_f_with_inner(x)
-    :(y->y)
+    return :(y -> y)
 end
 @test_throws ErrorException _g_f_with_inner(1)
+
+@generated function _g_f_with_inner2(x)
+    return y -> y
+end
+@test _g_f_with_inner2(1)(2) == 2
 
 # @generated functions errors
 global gf_err_ref = Ref{Int}()
@@ -205,3 +210,6 @@ let
     decorate(bar)
     @test in(typeof(bar), decorated)
 end
+
+# issue #19897
+@test code_lowered(staged_t1, (Int,Int)) isa Array  # check no error thrown

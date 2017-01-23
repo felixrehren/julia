@@ -64,7 +64,7 @@ julia> f(2.0, 3.0)
 7.0
 ```
 
-Applying it to any other types of arguments will result in a `MethodError`:
+Applying it to any other types of arguments will result in a [`MethodError`](@ref):
 
 ```julia
 julia> f(2.0, 3)
@@ -139,7 +139,7 @@ however, shows how clever application of sufficiently advanced technology can be
 from magic. [^Clarke61]
 
 For non-numeric values, and for fewer or more than two arguments, the function `f` remains undefined,
-and applying it will still result in a `MethodError`:
+and applying it will still result in a [`MethodError`](@ref):
 
 ```julia
 julia> f("foo", 3)
@@ -165,7 +165,7 @@ f (generic function with 2 methods)
 ```
 
 This output tells us that `f` is a function object with two methods. To find out what the signatures
-of those methods are, use the `methods()` function:
+of those methods are, use the [`methods()`](@ref) function:
 
 ```julia
 julia> methods(f)
@@ -248,7 +248,7 @@ ERROR: MethodError: g(::Float64, ::Float64) is ambiguous. Candidates:
 ```
 
 Here the call `g(2.0, 3.0)` could be handled by either the `g(Float64, Any)` or the `g(Any, Float64)`
-method, and neither is more specific than the other. In such cases, Julia raises a `MethodError`
+method, and neither is more specific than the other. In such cases, Julia raises a [`MethodError`](@ref)
 rather than arbitrarily picking a method. You can avoid method ambiguities by specifying an appropriate
 method for the intersection case:
 
@@ -346,7 +346,7 @@ Closest candidates are:
 ```
 
 As you can see, the type of the appended element must match the element type of the vector it
-is appended to, or else a `MethodError` is raised. In the following example, the method type parameter
+is appended to, or else a [`MethodError`](@ref) is raised. In the following example, the method type parameter
 `T` is used as the return value:
 
 ```julia
@@ -388,6 +388,114 @@ false
 
 The `same_type_numeric` function behaves much like the `same_type` function defined above, but
 is only defined for pairs of numbers.
+
+Redefining Methods
+------------------
+
+When redefining a method or adding new methods,
+it is important to realize that these changes don't take effect immediately.
+This is key to Julia's ability to statically infer and compile code to run fast,
+without the usual JIT tricks and overhead.
+Indeed, any new method definition won't be visible to the current runtime environment,
+including Tasks and Threads (and any previously defined `@generated` functions).
+Let's start with an example to see what this means:
+
+```julia
+julia> function tryeval()
+           @eval newfun() = 1
+           newfun()
+       end
+tryeval (generic function with 1 method)
+
+julia> tryeval()
+ERROR: MethodError: no method matching newfun()
+The applicable method may be too new: running in world age xxxx1, while current world is xxxx2.
+Closest candidates are:
+  newfun() at none:1 (method too new to be called from this world context.)
+ in tryeval() at none:1
+ ...
+
+julia> newfun()
+1
+```
+
+In this example, observe that the new definition for `newfun` has been created,
+but can't be immediately called.
+The new global is immediately visible to the `tryeval` function,
+so you could write `return newfun` (without parentheses).
+But neither you, nor any of your callers, nor the functions they call, or etc.
+can call this new method definition!
+
+But there's an exception: future calls to `newfun` *from the REPL* work as expected,
+being able to both see and call the new definition of `newfun`.
+
+However, future calls to `tryeval` will continue to see the definition of `newfun` as it was
+*at the previous statement at the REPL*, and thus before that call to `tryeval`.
+
+You may want to try this for yourself to see how it works.
+
+The implementation of this behavior is a "world age counter".
+This monotonically increasing value tracks each method definition operation.
+This allows describing "the set of method definitions visible to a given runtime environment"
+as a single number, or "world age".
+It also allows comparing the methods available in two worlds just by comparing their ordinal value.
+In the example above, we see that the "current world" (in which the method `newfun()` exists),
+is one greater than the task-local "runtime world" that was fixed when the execution of `tryeval` started.
+
+Sometimes it is necessary to get around this (for example, if you are implementing the above REPL).
+Well, don't despair, since there's an easy solution: just call `eval` a second time.
+For example, here we create a zero-argument closure over `ans` and `eval` a call to it:
+
+```julia
+    julia> function tryeval2()
+               ans = (@eval newfun2() = 1)
+               res = eval(Expr(:call,
+                   function()
+                       return ans() + 1
+                   end))
+                return res
+           end
+    tryeval2 (generic function with 1 method)
+
+    julia> tryeval2()
+    2
+```
+
+Finally, let's take a look at some more complex examples where this rule comes into play.
+
+```julia
+    julia> # initially f(x) has one definition:
+
+    julia> f(x) = "original definition";
+
+    julia> # start some other operations that use f(x):
+
+    julia> g(x) = f(x);
+
+    julia> t = @async f(wait()); yield();
+
+    julia> # now we add some new definitions for f(x):
+
+    julia> f(x::Int) = "definition for Int";
+
+    julia> f(x::Type{Int}) = "definition for Type{Int}";
+
+    julia> # and compare how these results differ:
+
+    julia> f(1)
+    "definition for Int"
+
+    julia> g(1)
+    "definition for Int"
+
+    julia> wait(schedule(t, 1))
+    "original definition"
+
+    julia> t = @async f(wait()); yield();
+
+    julia> wait(schedule(t, 1))
+    "definition for Int"
+```
 
 ## Parametrically-constrained Varargs methods
 

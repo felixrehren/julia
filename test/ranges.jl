@@ -260,7 +260,7 @@ end
 @test (1:2:6) + 0.3 == 1+0.3:2:5+0.3
 @test (1:2:6) - 1 == 0:2:4
 @test (1:2:6) - 0.3 == 1-0.3:2:5-0.3
-@test 2 .- (1:3) == 1:-1:-1
+@test 2 - (1:3) == 1:-1:-1
 
 # operations between ranges and arrays
 @test all(([1:5;] + (5:-1:1)) .== 6)
@@ -663,7 +663,7 @@ test_linspace_identity(linspace(1f0, 1f0, 1), linspace(-1f0, -1f0, 1))
 for _r in (1:2:100, 1:100, 1f0:2f0:100f0, 1.0:2.0:100.0,
            linspace(1, 100, 10), linspace(1f0, 100f0, 10))
     float_r = float(_r)
-    big_r = big(_r)
+    big_r = big.(_r)
     @test typeof(big_r).name === typeof(_r).name
     if eltype(_r) <: AbstractFloat
         @test isa(float_r, typeof(_r))

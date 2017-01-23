@@ -6,7 +6,7 @@
 
 valgrind_off = ccall(:jl_running_on_valgrind, Cint, ()) == 0
 
-yes = `perl -le 'while (1) {print STDOUT "y"}'`
+yes = `yes`
 echo = `echo`
 sortcmd = `sort`
 printf = `printf`
@@ -32,7 +32,7 @@ end
 
 #### Examples used in the manual ####
 
-@test readstring(`$echo hello | sort`) == "hello | sort\n"
+@test readstring(`$echo hello \| sort`) == "hello | sort\n"
 @test readstring(pipeline(`$echo hello`, sortcmd)) == "hello\n"
 @test length(spawn(pipeline(`$echo hello`, sortcmd)).processes) == 2
 
@@ -64,12 +64,12 @@ if valgrind_off
 end
 
 if is_unix()
-    prefixer(prefix, sleep) = `perl -nle '$|=1; print "'$prefix' ", $_; sleep '$sleep';'`
-    @test success(pipeline(`perl -le '$|=1; for(0..2){ print; sleep 1 }'`,
-                       prefixer("A",2) & prefixer("B",2)))
-    @test success(pipeline(`perl -le '$|=1; for(0..2){ print; sleep 1 }'`,
-                       prefixer("X",3) & prefixer("Y",3) & prefixer("Z",3),
-                       prefixer("A",2) & prefixer("B",2)))
+    prefixer(prefix, sleep) = `sh -c "while IFS= read REPLY; do echo '$prefix ' \$REPLY; sleep $sleep; done"`
+    @test success(pipeline(`sh -c "for i in 1 2 3 4 5 6 7 8 9 10; do echo \$i; sleep 0.1; done"`,
+                       prefixer("A", 0.2) & prefixer("B", 0.2)))
+    @test success(pipeline(`sh -c "for i in 1 2 3 4 5 6 7 8 9 10; do echo \$i; sleep 0.1; done"`,
+                       prefixer("X", 0.3) & prefixer("Y", 0.3) & prefixer("Z", 0.3),
+                       prefixer("A", 0.2) & prefixer("B", 0.2)))
 end
 
 @test  success(truecmd)
@@ -92,7 +92,8 @@ end
 
 # Stream Redirection
 if !is_windows() # WINNT reports operation not supported on socket (ENOTSUP) for this test
-    local r = Channel(1), port, server, sock, client, t1, t2
+    local r = Channel(1)
+    local port, server, sock, client, t1, t2
     t1 = @async begin
         port, server = listenany(2326)
         put!(r, port)
@@ -215,14 +216,6 @@ end
 
 # issue #5904
 @test run(pipeline(ignorestatus(falsecmd), truecmd)) === nothing
-
-
-# issue #6010
-# TODO: should create separate set of task tests
-ducer = @async for i=1:100; produce(i); end
-yield()
-@test consume(ducer) == 1
-@test consume(ducer) == 2
 
 @testset "redirect_*" begin
     let OLD_STDOUT = STDOUT,
@@ -429,8 +422,9 @@ end
 # test for proper handling of FD exhaustion
 if is_unix()
     let ps = Pipe[]
+        ulimit_n = tryparse(Int, readchomp(`sh -c 'ulimit -n'`))
         try
-            for i = 1:100_000
+            for i = 1 : 100 * get(ulimit_n, 1000)
                 p = Pipe()
                 Base.link_pipe(p)
                 push!(ps, p)
@@ -440,7 +434,12 @@ if is_unix()
             for p in ps
                 close(p)
             end
-            @test (ex::Base.UVError).code == Base.UV_EMFILE
+            if isnull(ulimit_n)
+                warn("`ulimit -n` is set to unlimited, fd exhaustion cannot be tested")
+                @test_broken (ex::Base.UVError).code == Base.UV_EMFILE
+            else
+                @test (ex::Base.UVError).code == Base.UV_EMFILE
+            end
         end
     end
 end

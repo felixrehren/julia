@@ -5,7 +5,8 @@ default: html
 # You can set these variables from the command line.
 SRCDIR           := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 JULIAHOME        := $(abspath $(SRCDIR)/..)
-JULIA_EXECUTABLE := $(JULIAHOME)/usr/bin/julia
+include $(JULIAHOME)/Make.inc
+JULIA_EXECUTABLE := $(call spawn,$(build_bindir)/julia)
 
 .PHONY: help clean cleanall html pdf linkcheck doctest check
 
@@ -17,32 +18,46 @@ help:
 	@echo "  doctest   to run all doctests embedded in the documentation"
 	@echo "  check     to run linkcheck and doctests"
 
+UnicodeData.txt:
+	$(JLDOWNLOAD) http://www.unicode.org/Public/9.0.0/ucd/UnicodeData.txt
+
+deps: UnicodeData.txt
+	$(JLCHECKSUM) UnicodeData.txt
+
 clean:
-	-rm -rf _build/* deps/*
+	-rm -rf _build/* deps/* docbuild.log UnicodeData.txt
 
 cleanall: clean
 
-html:
+html: deps
 	@echo "Building HTML documentation."
+ifneq ($(OS),WINNT)
 	$(JULIA_EXECUTABLE) make.jl -- deploy
+else
+# work around issue #11727, windows output redirection breaking on buildbot
+	$(JULIA_EXECUTABLE) make.jl -- deploy > docbuild.log 2>&1
+	@cat docbuild.log
+endif
 	@echo "Build finished. The HTML pages are in _build/html."
 
-pdf:
+pdf: deps
 	@echo "Building PDF documentation."
 	$(JULIA_EXECUTABLE) make.jl -- pdf
 	@echo "Build finished."
 
-linkcheck:
+linkcheck: deps
 	@echo "Checking external documentation links."
-	$(JULIA_EXECUTABLE) make.jl -- linkcheck strict
+	$(JULIA_EXECUTABLE) make.jl -- linkcheck
 	@echo "Checks finished."
 
-doctest:
+doctest: deps
 	@echo "Running all embedded 'doctests'."
-	$(JULIA_EXECUTABLE) make.jl -- doctest strict
+	$(JULIA_EXECUTABLE) --color=yes make.jl -- doctest
 	@echo "Checks finished."
 
-check:
+check: deps
 	@echo "Running all embedded 'doctests' and checking external links."
-	$(JULIA_EXECUTABLE) make.jl -- doctest linkcheck strict
+	$(JULIA_EXECUTABLE) --color=yes make.jl -- doctest linkcheck
 	@echo "Checks finished."
+
+.PHONY: deps

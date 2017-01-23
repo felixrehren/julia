@@ -46,7 +46,7 @@ cd(dirname(@__FILE__)) do
     @everywhere include("testdefs.jl")
 
     #pretty print the information about gc and mem usage
-    name_align    = max(length("Test (Worker)"), maximum(map(x -> length(x) + 3 + ndigits(nworkers()), tests)))
+    name_align    = maximum([length("Test (Worker)"); map(x -> length(x) + 3 + ndigits(nworkers()), tests)])
     elapsed_align = length("Time (s)")
     gc_align      = length("GC (s)")
     percent_align = length("GC %")
@@ -69,7 +69,7 @@ cd(dirname(@__FILE__)) do
                     push!(results, (test, resp))
                     if (isa(resp[end], Integer) && (resp[end] > max_worker_rss)) || isa(resp, Exception)
                         if n > 1
-                            rmprocs(p, waitfor=0.5)
+                            rmprocs(p, waitfor=5.0)
                             p = addprocs(1; exename=test_exename, exeflags=test_exeflags)[1]
                             remotecall_fetch(()->include("testdefs.jl"), p)
                         else
@@ -108,7 +108,7 @@ cd(dirname(@__FILE__)) do
         n > 1 && print("\tFrom worker 1:\t")
         local resp
         try
-            resp = runtests(t)
+            resp = eval(Expr(:call, () -> runtests(t))) # runtests is defined by the include above
         catch e
             resp = [e]
         end

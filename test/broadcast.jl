@@ -83,7 +83,7 @@ function as_sub{T}(x::AbstractArray{T,3})
     y
 end
 
-bittest(f::Function, ewf::Function, a...) = (@test ewf(a...) == BitArray(broadcast(f, a...)))
+bittest(f::Function, a...) = (@test f.(a...) == BitArray(broadcast(f, a...)))
 n1 = 21
 n2 = 32
 n3 = 17
@@ -97,7 +97,7 @@ for arr in (identity, as_sub)
     @test broadcast(+, arr([1, 0]), arr([1, 4])) == [2, 4]
     @test broadcast(+, arr([1, 0]), 2) == [3, 2]
 
-    @test @inferred(arr(eye(2)) .+ arr([1, 4])) == arr([2 1; 4 5])
+    @test @inferred(broadcast(+, arr(eye(2)), arr([1, 4]))) == arr([2 1; 4 5])
     @test arr(eye(2)) .+ arr([1  4]) == arr([2 4; 1 5])
     @test arr([1  0]) .+ arr([1, 4]) == arr([2 1; 5 4])
     @test arr([1, 0]) .+ arr([1  4]) == arr([2 5; 1 4])
@@ -137,19 +137,16 @@ for arr in (identity, as_sub)
     @test A == diagm(10:12)
     @test_throws BoundsError broadcast_setindex!(A, 7, [1,-1], [1 2])
 
-    for (f, ewf) in (((==), (.==)),
-                     ((<) , (.<) ),
-                     ((!=), (.!=)),
-                     ((<=), (.<=)))
-        bittest(f, ewf, arr(eye(2)), arr([1, 4]))
-        bittest(f, ewf, arr(eye(2)), arr([1  4]))
-        bittest(f, ewf, arr([0, 1]), arr([1  4]))
-        bittest(f, ewf, arr([0  1]), arr([1, 4]))
-        bittest(f, ewf, arr([1, 0]), arr([1, 4]))
-        bittest(f, ewf, arr(rand(rb, n1, n2, n3)), arr(rand(rb, n1, n2, n3)))
-        bittest(f, ewf, arr(rand(rb,  1, n2, n3)), arr(rand(rb, n1,  1, n3)))
-        bittest(f, ewf, arr(rand(rb,  1, n2,  1)), arr(rand(rb, n1,  1, n3)))
-        bittest(f, ewf, arr(bitrand(n1, n2, n3)), arr(bitrand(n1, n2, n3)))
+    for f in ((==), (<) , (!=), (<=))
+        bittest(f, arr(eye(2)), arr([1, 4]))
+        bittest(f, arr(eye(2)), arr([1  4]))
+        bittest(f, arr([0, 1]), arr([1  4]))
+        bittest(f, arr([0  1]), arr([1, 4]))
+        bittest(f, arr([1, 0]), arr([1, 4]))
+        bittest(f, arr(rand(rb, n1, n2, n3)), arr(rand(rb, n1, n2, n3)))
+        bittest(f, arr(rand(rb,  1, n2, n3)), arr(rand(rb, n1,  1, n3)))
+        bittest(f, arr(rand(rb,  1, n2,  1)), arr(rand(rb, n1,  1, n3)))
+        bittest(f, arr(bitrand(n1, n2, n3)), arr(bitrand(n1, n2, n3)))
     end
 end
 
@@ -163,10 +160,8 @@ m = [1:2;]'
 @test m./r2 ≈ [ratio 2ratio]
 @test m./[r2;] ≈ [ratio 2ratio]
 
-@test @inferred([0,1.2].+reshape([0,-2],1,1,2)) == reshape([0 -2; 1.2 -0.8],2,1,2)
-rt = Base.return_types(.+, Tuple{Array{Float64, 3}, Array{Int, 1}})
-@test length(rt) == 1 && rt[1] == Array{Float64, 3}
-rt = Base.return_types(broadcast, Tuple{typeof(.+), Array{Float64, 3}, Array{Int, 3}})
+@test @inferred(broadcast(+,[0,1.2],reshape([0,-2],1,1,2))) == reshape([0 -2; 1.2 -0.8],2,1,2)
+rt = Base.return_types(broadcast, Tuple{typeof(+), Array{Float64, 3}, Array{Int, 1}})
 @test length(rt) == 1 && rt[1] == Array{Float64, 3}
 rt = Base.return_types(broadcast!, Tuple{Function, Array{Float64, 3}, Array{Float64, 3}, Array{Int, 1}})
 @test length(rt) == 1 && rt[1] == Array{Float64, 3}
@@ -191,7 +186,7 @@ let a = Real[2, 2.0, 4//2] / 2
     @test eltype(a) == Real
 end
 let a = Real[2, 2.0, 4//2] / 2.0
-    @test eltype(a) == Real
+    @test eltype(a) == Float64
 end
 
 # issue 16164
@@ -296,6 +291,16 @@ import Base.Meta: isexpr
 @test isexpr(expand(:(f.(x,1))), :thunk)
 @test isexpr(expand(:(f.(x,1.0))), :thunk)
 @test isexpr(expand(:(f.(x,$π))), :thunk)
+@test isexpr(expand(:(f.(x,"hello"))), :thunk)
+@test isexpr(expand(:(f.(x,$("hello")))), :thunk)
+
+# PR #17623: Fused binary operators
+@test [true] .* [true] == [true]
+@test [1,2,3] .|> (x->x+1) == [2,3,4]
+let g = Int[], ⊕ = (a,b) -> let c=a+2b; push!(g, c); c; end
+    @test [1,2,3] .⊕ [10,11,12] .⊕ [100,200,300] == [221,424,627]
+    @test g == [21,221,24,424,27,627] # test for loop fusion
+end
 
 # PR 16988
 @test Base.promote_op(+, Bool) === Int
@@ -336,6 +341,9 @@ end
 @test broadcast(+, 1.0, (0, -2.0)) == (1.0,-1.0)
 @test broadcast(+, 1.0, (0, -2.0), [1]) == [2.0, 0.0]
 @test broadcast(*, ["Hello"], ", ", ["World"], "!") == ["Hello, World!"]
+let s = "foo"
+    @test s .* ["bar", "baz"] == ["foobar", "foobaz"] == "foo" .* ["bar", "baz"]
+end
 
 # Ensure that even strange constructors that break `T(x)::T` work with broadcast
 immutable StrangeType18623 end
@@ -355,3 +363,89 @@ StrangeType18623(x,y) = (x,y)
 
 # 19419
 @test @inferred(broadcast(round, Int, [1])) == [1]
+
+# https://discourse.julialang.org/t/towards-broadcast-over-combinations-of-sparse-matrices-and-scalars/910
+let
+    f(A, n) = broadcast(x -> +(x, n), A)
+    @test @inferred(f([1.0], 1)) == [2.0]
+    g() = (a = 1; Base.Broadcast._broadcast_eltype(x -> x + a, 1.0))
+    @test @inferred(g()) === Float64
+end
+
+# Ref as 0-dimensional array for broadcast
+@test (-).(C_NULL, C_NULL)::UInt == 0
+@test (+).(1, Ref(2)) == fill(3)
+@test (+).(Ref(1), Ref(2)) == fill(3)
+@test (+).([[0,2], [1,3]], [1,-1]) == [[1,3], [0,2]]
+@test (+).([[0,2], [1,3]], Ref{Vector{Int}}([1,-1])) == [[1,1], [2,2]]
+
+# Check that broadcast!(f, A) populates A via independent calls to f (#12277, #19722),
+# and similarly for broadcast!(f, A, numbers...) (#19799).
+@test let z = 1; A = broadcast!(() -> z += 1, zeros(2)); A[1] != A[2]; end
+@test let z = 1; A = broadcast!(x -> z += x, zeros(2), 1); A[1] != A[2]; end
+
+# broadcasting for custom AbstractArray
+immutable Array19745{T,N} <: AbstractArray{T,N}
+    data::Array{T,N}
+end
+Base.getindex(A::Array19745, i::Integer...) = A.data[i...]
+Base.size(A::Array19745) = size(A.data)
+
+Base.Broadcast._containertype{T<:Array19745}(::Type{T}) = Array19745
+
+Base.Broadcast.promote_containertype(::Type{Array19745}, ::Type{Array19745}) = Array19745
+Base.Broadcast.promote_containertype(::Type{Array19745}, ::Type{Array})      = Array19745
+Base.Broadcast.promote_containertype(::Type{Array19745}, ct)                 = Array19745
+Base.Broadcast.promote_containertype(::Type{Array}, ::Type{Array19745})      = Array19745
+Base.Broadcast.promote_containertype(ct, ::Type{Array19745})                 = Array19745
+
+Base.Broadcast.broadcast_indices(::Type{Array19745}, A)      = indices(A)
+Base.Broadcast.broadcast_indices(::Type{Array19745}, A::Ref) = ()
+
+getfield19745(x::Array19745) = x.data
+getfield19745(x)             = x
+
+Base.Broadcast.broadcast_c(f, ::Type{Array19745}, A, Bs...) =
+    Array19745(Base.Broadcast.broadcast_c(f, Array, getfield19745(A), map(getfield19745, Bs)...))
+
+@testset "broadcasting for custom AbstractArray" begin
+    a  = randn(10)
+    aa = Array19745(a)
+    @test a .+ 1  == @inferred(aa .+ 1)
+    @test a .* a' == @inferred(aa .* aa')
+    @test isa(aa .+ 1, Array19745)
+    @test isa(aa .* aa', Array19745)
+end
+
+# broadcast should only "peel off" one container layer
+@test get.([Nullable(1), Nullable(2)]) == [1, 2]
+let io = IOBuffer()
+    broadcast(x -> print(io, x), [Nullable(1.0)])
+    @test String(take!(io)) == "Nullable{Float64}(1.0)"
+end
+
+# Test that broadcast's promotion mechanism handles closures accepting more than one argument.
+# (See issue #19641 and referenced issues and pull requests.)
+let f() = (a = 1; Base.Broadcast._broadcast_eltype((x, y) -> x + y + a, 1.0, 1.0))
+    @test @inferred(f()) == Float64
+end
+
+@testset "broadcast resulting in BitArray" begin
+    let f(x) = x ? true : "false"
+        ba = f.([true])
+        @test ba isa BitArray
+        @test ba == [true]
+        a = f.([false])
+        @test a isa Array{String}
+        @test a == ["false"]
+        @test f.([true, false]) == [true, "false"]
+    end
+end
+
+# Test that broadcast treats type arguments as scalars, i.e. containertype yields Any,
+# even for subtypes of abstract array. (https://github.com/JuliaStats/DataArrays.jl/issues/229)
+@testset "treat type arguments as scalars, DataArrays issue 229" begin
+    @test Base.Broadcast.containertype(AbstractArray) == Any
+    @test broadcast(==, [1], AbstractArray) == BitArray([false])
+    @test broadcast(==, 1, AbstractArray) == false
+end
