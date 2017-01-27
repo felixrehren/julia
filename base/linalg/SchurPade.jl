@@ -2,80 +2,89 @@ module SchurPade
 
 export powerm
 
-#   Reference: N. J. Higham and L. Lin, A Schur--Pad\'e Algorithm for
-#   Fractional Powers of a Matrix.
-#   MIMS EPrint 2010.91, The University of Manchester, October 2010,
-#   revised February 2011.
-#   Name of corresponding algorithm in that paper: Algorithm 5.1/SPade.
-
-#   Nicholas J. Higham and Lijing Lin, February 22, 2011.
-
-
-#   POWERM_PADE(A,P) computes the P'th power X of the matrix A,
-#   for arbitrary real P and A with no nonpositive real eigenvalues,
-#   by the Schur-Pade algorithm.
-#   [X,NSQ,M] = POWERM_PADE(A, P) returns the number NSQ of matrix
-#   square roots computed and the degree M of the Pade approximant used.
-#   If A is singular or has any eigenvalues on the negative real axis,
-#   a warning message is printed.
-
-function powerm{T<:Number}(A::Array{T,2},p::Real)
-    # initial checks
-    n = size(A,1)
-    #@assert n == size(A,2) # square matrix
-
-    if p == 0 # 0th power -> identity mat
-        return eye(A), 0, 0
+function _sqrtm(A::UpperTriangular)
+    realmatrix = false
+    if isreal(A)
+        realmatrix = true
+        for i = 1:Base.LinAlg.checksquare(A)
+            if real(A[i,i]) < 0
+                realmatrix = false
+                break
+            end
+        end
     end
+    _sqrtm(A,Val{realmatrix})
+end
+function _sqrtm{T,realmatrix}(A::UpperTriangular{T},::Type{Val{realmatrix}})
+    t = realmatrix ? typeof(sqrt(zero(T))) : typeof(sqrt(complex(zero(T))))
+    n = Base.LinAlg.checksquare(A)
+    R = zeros(t, n, n)
+    tt = typeof(zero(t)*zero(t))
+    @inbounds begin
+        for j = 1:n
+            R[j,j] = realmatrix ? sqrt(A[j,j]) : sqrt(complex(A[j,j]))
+            for i = j-1:-1:1
+                r::tt = A[i,j]
+                @simd for k = i+1:j-1
+                    r -= R[i,k]*R[k,j]
+                end
+                r==0 || (R[i,j] = r / (R[i,i] + R[j,j]))
+            end
+        end
+    end
+    return UpperTriangular(R)
+end
+
+#   Reference: N. J. Higham and L. Lin, A Schur--Pad\'e Algorithm for
+#   Fractional Powers of a Matrix, The University of Manchester 2010.
+#   Algorithm in that paper: Algorithm 5.1/SPade.
+
+#   powerm(A,P) computes X = A^P,
+#   for arbitrary real P and A a matrix without nonpositive real eigenvalues,
+#   by the Schur-Pade algorithm, to within machine epsilon accuracy.
+#   powerm(A, P) = [X,NSQ,M] returns the number NSQ of square roots
+#   and the degree M of the Pade approximant used.
+
+function powerm{T<:Number}(A::Matrix{T},p::Real,maxsqrt::Int = 64)
+    n = Base.LinAlg.checksquare(A)
+    # 0th power -> identity mat
+    (p == 0) && return (eye(A), 0, 0)
 
     # decompose power p into pint, pfrac
     pint = sign(p)*floor(abs(p)) # round towards 0
     pfrac = p - pint    # -1 < pfrac < 1
-    if pfrac == 0
-        return A^p, 0, 0
-    end
+    (pfrac == 0) && return (A^p, 0, 0)
 
-    # Schur factorisation (i.e. conj. of upper-triangular mat)
+    # Schur factorisation F (i.e. conjugation to upper-triangular mat)
     # A = F[:vectors]*F[:Schur]*F[:vectors]
-    F = schurfact(A)
-    if isdiag(F[:Schur])
-        return F[:vectors]*(F[:Schur].^p)*F[:vectors]', 0, 0
-    end
-    if 0 in F[:values]
-        warn("Matrix power may not exist, as the matrix A is singular.")
-    end
-    if any(x -> isreal(x) && real(x) < 0, F[:values])
-        warn("The principal matrix power is not defined for A with "
-            *"negative real eigenvalues. A non-principal matrix power "
-            *"will be returned.")
-    end
+    F = schurfact(complex(A))
+    # (0 in F[:values]) && warn("The matrix power may not exist, as the matrix is singular")
+    # answer will be complex?
+    realm = isreal(A) && all(x -> isreal(x) && (real(x) >= 0), F[:values])
+    # realm || warn("The principal matrix power is not defined for matrices with "
+    #         *"negative real eigenvalues. A non-principal power "
+    #         *"will be returned.")
+    S = realm ? real(F[:Schur]) : F[:Schur]
+    v = realm ? real(F[:vectors]) : F[:vectors]
+    isdiag(F[:Schur]) && return (v*(S.^p)*v', 0, 0)
+    n == 2 && return (v*powerm2by2(S,pfrac)*v', 0, 0)
 
-    maxsqrt = 64 # ??
-    # apply fractional power
-    X, nsq, m = _powerm_triang(F[:Schur],pfrac,maxsqrt)
-    X = F[:vectors]*X*F[:vectors]'
+    X, nsq, m = _powerm(S,pfrac,maxsqrt,Val{realm})
+    X = v*X*v'
     return (A^pint) * X, nsq, m
 end
 
-#   POWERM_TRIANG   Power of triangular matrix by Pade-based algorithm.
-#   POWERM_TRIANG(T,P,MAXSQRT) computes the P'th power X of
-#   the upper triangular matrix T, for an arbitrary real number P in the
-#   interval (-1,1),and T with no nonpositive real eigenvalues, by a
-#   Pade-based algorithm. At most MAXSQRT matrix square roots are computed.
-#   [X, NSQ,M] = POWERM_TRIANG(T,P) returns the number NSQ of
-#   square roots computed and the degree M of the Pade approximant used.
+#   _powerm specialised to the situation A upper-triangular and -1 < pfrac <1
+function _powerm{U<:Number,realm}(A::Matrix{U},pfrac::Real,maxsqrt::Int,::Type{Val{realm}})
+    n = Base.LinAlg.checksquare(A)
 
-function _powerm_triang{S<:Number}(A::Array{S,2},pfrac::Real,maxsqrt::Int)
-    n = size(A,1)
-    if n == 2 # go directly to 2x2 case
-        return powerm2by2(A,pfrac), 0, 0
-    end
-
-    nsq = 0 # number of sqrts computed
-    q = 0
-    I = eye(A)
-
-    xvals = [ # Max norm(X) for degree m Pade approximant to (I-X)^p.
+    # take sqrts until matrix has norm close to 1
+    # the closer the norm, the more easily approximated
+    # chose Pade degree trading off cost of sqrts with cost of Pade approx
+    # (lower Pade degree, lower cost to calculation of Pade approx)
+    # subject to answer coming out with Float64-accuracy
+    thetam = [ # Max norm(I-X) such that degree m Pade approximant to (I-X)^p
+                # has Float64 = 2^-53 accuracy
           1.512666672122460e-005    # m = 1
           2.236550782529778e-003    # m = 2
           1.882832775783885e-002    # m = 3 being used
@@ -94,31 +103,37 @@ function _powerm_triang{S<:Number}(A::Array{S,2},pfrac::Real,maxsqrt::Int)
           7.280253837034645e-001    # m = 16
           9.152924199170567e-001    # m = 32
           9.764341682154458e-001 ]; # m = 64
+    padeDegree = normdiff -> findfirst(x -> normdiff <= x, thetam[3:7])::Int + 2
 
-    # repeated sqrt
-    T = A
-    local m
-    while true
+    T = UpperTriangular(A)
+    nsq = 0 # number of sqrts computed
+    m = 16 # (max Pade degree reasonably possible in Float64)
+    while nsq < maxsqrt
         normdiff = norm(T-I,1)
-        if normdiff <= xvals[7]
-            q = q+1
-            j1 = find(x -> normdiff <= x, xvals[3:7])[1] + 2
-            j2 = find(x -> normdiff/2 <= x, xvals[3:7])[1] + 2
-            if j1 - j2 <= 1 || q == 2
-                m = j1
-                break
+        if normdiff <= thetam[7]
+            # we have a close-to-reasonable Pade degree
+            m = padeDegree(normdiff)
+            if m - padeDegree(normdiff/2) > 0
+                # taking another sqrt would reduce the Pade degree further
+                # (n.b. at most 1 extra sqrt can be worth it)
+                T = _sqrtm(T,Val{realm})
+                nsq += 1
+                m = padeDegree(norm(T-I,1))
             end
-        end
-        if nsq == maxsqrt
-            m = 16
             break
         end
-        T = sqrtm(T)
-        nsq = nsq + 1
+        T = _sqrtm(T,Val{realm})
+        nsq += 1
     end
+    #return X, nsq, m
 
-    # pade approximant for coefficients
-    X = _powerm_cf(I-T,pfrac,m)
+    # compute the [m/m] Pade approximant of matrix power (I-T)^p
+    B = I - T
+    k = 2*m
+    X = I + _coeff(pfrac,k)*B
+    for j = (k-1):-1:1 # bottom-up
+        X = I + _coeff(pfrac,j) * (X\B)
+    end
 
     # repeated sqr
     for s in 0:nsq
@@ -132,40 +147,23 @@ function _powerm_triang{S<:Number}(A::Array{S,2},pfrac::Real,maxsqrt::Int)
     return X, nsq, m
 end
 
-# _coeff something something pade
+# _coeff evaluate continued fraction representation in bottom-up fashion
 function _coeff(p::Real,i::Int)::Real
-    if i == 1
-        return -p
-    end
-    jj = i/2
+    (i == 1) && return -p
+    j = i/2
     if mod(i,2) == 0
-        c = (-jj + p) / (2*(2*jj-1))
+        c = (-j + p) / (2*(2*j-1))
     else
-        jj = floor(jj)
-        c = (-jj - p) / (2*(2*jj+1))
+        j = floor(j)
+        c = (-j - p) / (2*(2*j+1))
     end
     return c
-end
-
-# _powerm_cf Evaluate Pade approximant bottom up
-#   POWERM_CF(Y,p,m) computes the [m/m] Pade approximant of the
-#   matrix power (I-Y)^p by evaluating a continued fraction
-#   representation in bottom-up fashion.
-function _powerm_cf{T<:Number}(A::Array{T,2},pfrac::Real,m::Int)
-    k = 2*m
-    n = size(A,1)
-    I = eye(A)
-    S = _coeff(pfrac,k)
-    for j = (k-1):-1:1 # bottom-up
-        S = _coeff(pfrac,j) * ((I+S)\A)
-    end
-    return I + S
 end
 
 # _powerm2by2    Power of 2-by-2 upper triangular matrix.
 #   POWERM2BY2(A,p) is the pth power of the 2-by-2 upper
 #   triangular matrix A, where p is an arbitrary real number.
-function _powerm2by2{T<:Number}(A::Array{T,2},p::Number)
+function _powerm2by2{T<:Number}(A::Array{T,2},p::Real)
     a1 = A[1,1]
     a2 = A[2,2]
     a1p = a1^p
