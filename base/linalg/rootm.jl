@@ -76,7 +76,7 @@ end
 
 function _rootm{realm}(A::UpperTriangular,p::Int,::Type{Val{realm}})
     z = zero(A[1,1]^(1/p))
-    z = realm ? z && complex(z)
+    z = realm ? z : complex(z)
     t = typeof(z)
     n = Base.LinAlg.checksquare(A)
     X = zeros(t,n,n)
@@ -84,36 +84,66 @@ function _rootm{realm}(A::UpperTriangular,p::Int,::Type{Val{realm}})
     B = Matrix{t}(p-1,n)
 
     @inbounds for j in 1:n
-        X[j,j] = A[j,j]^(1/p)
+        # compute the diagonal
+        X[j,j] = c = xjj = A[j,j]^(1/p)
         for q in 1:(p-1)
-            R[q,j] = X[j,j]^q
+            # R[q,j] = X[j,j]^q
+            R[q,j] = c
             B[q,j] = z
+            c *= xjj
         end
 
         for i in (j-1):-1:1
-            # Lemma 4.1
+            # pre-compute the helper sum B[q,i]
             if i+1 == j
                 B[:,i] .= z
             else
                 for q in 1:(p-1)
-                    B[q,i] = sum(X[i,k]*R[q,k] for k in (i+1):(j-1))
+                    # B[q,i] = sum(X[i,k]*R[q,k] for k in (i+1):(j-1))
+                    d = z
+                    for k in (i+1):(j-1)
+                        d += X[i,k]*R[q,k]
+                    end
+                    B[q,i] = d
                 end
             end
 
-            xii, xjj = X[i,i], X[j,j]
+            # find xij
+            xii = X[i,i]
+            r = xjj/xii
             xij = A[i,j]
+            c = one(xii)
             @simd for q in 1:(p-1)
-                xij -= xii^(q-1)*B[p-q,i]
+                # xij -= xii^(q-1)*B[p-q,i]
+                xij -= c*B[p-q,i]
+                c *= xii
             end
-            xij /= sum(xii^(p-1-q)*xjj^q for q in 0:(p-1))
-            X[i,j] = xij
-
-            # Lemma 4.7
-            if (i > 1 || j < n)
+            # d = sum(xii^(p-1-q)*xjj^q for q in 0:(p-1))
+            d = c # = xii^(p-1)
+            for q in 1:(p-1)
+                c *= r
+                d += c
+            end
+            X[i,j] = xij /= d
+            
+            # if not finished with this column, compute the helper sum R[q,i]
+            if i > 1
                 R[1,i] = xij
                 for q in 2:(p-1)
-                    R[q,i] = xij*sum(xii^(q-1-s)*xjj^s for s in 0:(q-1))
-                           + sum(xii^(s-1)*B[s,j] for s in 1:(q-1))
+                    # R[q,i] = xij*sum(xii^(q-1-s)*xjj^s for s in 0:(q-1))
+                    #        + sum(xii^(s-1)*B[s,j] for s in 1:(q-1))
+                    c = xii^(q-1)
+                    d = e = z
+                    f = one(xii)
+                    for s in 0:(q-1)
+                        d += c
+                        c *= r
+                    end
+                    for s in 1:(q-1)
+                        e += f*B[s,j]
+                        f *= xii
+                    end
+                    R[q,i] = xij*d + e
                 end
             end
         end
